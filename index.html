@@ -5,17 +5,32 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="description" content="小水力發電示範獎勵審查評分系統">
   <title>小水力發電示範獎勵審查</title>
-  <link rel="stylesheet" href="styles.css?v=7">
+  <link rel="stylesheet" href="styles.css?v=8">
 </head>
 <body>
-  <div class="app-shell">
+  <section class="login-gate" id="loginGate" aria-labelledby="loginTitle">
+    <form class="login-card" id="loginForm">
+      <div class="login-mark" aria-hidden="true">水</div>
+      <h1 id="loginTitle">小水力審查系統登入</h1>
+      <p id="loginRole">正在確認登入身分…</p>
+      <label for="loginPassword">登入密碼
+        <input id="loginPassword" type="password" inputmode="numeric" autocomplete="current-password" required autofocus>
+      </label>
+      <button class="btn login-submit" id="loginSubmit" type="submit">登入</button>
+      <div class="login-message" id="loginMessage" role="alert" aria-live="polite"></div>
+    </form>
+  </section>
+  <div class="app-shell hide" id="appShell">
     <header>
       <div class="topline">
         <div>
           <h1>小水力發電示範獎勵審查</h1>
           <p id="subtitle">安全連線中…</p>
         </div>
-        <div class="save-state" id="connectionState">Firebase 雲端同步</div>
+        <div class="session-tools">
+          <div class="save-state" id="connectionState">Firebase 雲端同步</div>
+          <button class="logout-btn" id="logoutBtn" type="button">登出</button>
+        </div>
       </div>
     </header>
     <nav id="mainNav" aria-label="目前作業">
@@ -23,6 +38,6 @@
     </nav>
     <main><div id="notice" class="notice">正在載入資料…</div><div id="app"></div></main>
   </div>
-  <script type="module" src="app-v5.js?v=9"></script>
+  <script type="module" src="app-v5.js?v=10"></script>
 </body>
 </html>

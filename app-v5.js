@@ -8,6 +8,8 @@ const $=s=>document.querySelector(s);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const params=new URLSearchParams(location.search),fragment=new URLSearchParams(location.hash.replace(/^#/,''));
 const ADMIN=fragment.get('admin')||params.get('admin')||'',TOKEN=fragment.get('token')||params.get('token')||'';
+const ACCESS_HASH='e4ffbb56f9fe9c50f61447d9582fdfe6be8727a51adabcad7d7d5da49d49a978';
+const ACCESS_VERSION='2026-11-10-v1';
 const CATS=['citizen','environment','composite'];
 const CAT_NAMES={citizen:'公民參與',environment:'友善環境',composite:'複合利用'};
 const CAT_COLORS={citizen:'#173f78',environment:'#007d7d',composite:'#1f5da8'};
@@ -15,6 +17,20 @@ const BAND_DETAILS=['人、事、時、地、物等要素具 3 項以上。','�
 
 let db,auth,user,config={},adminConfig={},cases={},reviewer={},submissions={},draft={},activeCase='';
 let adminData={reviewers:{},assessments:{},exclusions:{}},adminTab='setup',adminReviewer='',adminCase='';
+
+async function passwordHash(value){
+  const bytes=new TextEncoder().encode(value),digest=await crypto.subtle.digest('SHA-256',bytes);
+  return [...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+function loginSessionKey(){return `smallHydroAccess:${ACCESS_VERSION}:${ADMIN?'admin':'reviewer'}`}
+async function requireLogin(){
+  if(!ADMIN&&!TOKEN)throw new Error('網址缺少管理或委員專屬識別碼');
+  const gate=$('#loginGate'),shell=$('#appShell'),form=$('#loginForm'),input=$('#loginPassword'),message=$('#loginMessage'),submit=$('#loginSubmit');
+  $('#loginRole').textContent=ADMIN?'管理者登入':'審查委員登入';
+  if(sessionStorage.getItem(loginSessionKey())===ACCESS_HASH){gate.classList.add('hide');shell.classList.remove('hide');return}
+  await new Promise(resolve=>{form.onsubmit=async e=>{e.preventDefault();submit.disabled=true;message.textContent='驗證中…';try{if(await passwordHash(input.value)!==ACCESS_HASH){message.textContent='密碼錯誤，請重新輸入。';input.value='';input.focus();return}sessionStorage.setItem(loginSessionKey(),ACCESS_HASH);gate.classList.add('hide');shell.classList.remove('hide');resolve()}finally{submit.disabled=false}}});
+}
+function logout(){sessionStorage.removeItem(loginSessionKey());location.reload()}
 
 async function boot(){
   if(Object.values(firebaseConfig).some(v=>String(v).startsWith('__')))throw new Error('Firebase 尚未完成設定');
@@ -129,4 +145,5 @@ async function restoreProjectData(d){if(!d?.config||!d?.cases||!d?.reviewers||!d
 async function importProject(e){const file=e.target.files?.[0];e.target.value='';if(!file)return;try{const parsed=JSON.parse(await file.text()),d=parsed?.format==='small-hydro-review-cloud-project'?parsed.data:parsed;if(!confirm('匯入 JSON 會以檔案內容替換目前線上設定、案件、委員與評分。是否繼續？'))return;await restoreProjectData(d);alert('專案 JSON 已完整匯入雲端。');await loadAdmin()}catch(err){await setSession({adminToken:ADMIN});alert('無法匯入專案：'+err.message)}}
 
 function showError(msg){$('#notice').className='notice error';$('#notice').textContent=msg}
-boot().catch(e=>showError(e.message));
+$('#logoutBtn').onclick=logout;
+requireLogin().then(boot).catch(e=>{if($('#appShell').classList.contains('hide')){$('#loginMessage').textContent=e.message}else showError(e.message)});

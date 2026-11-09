@@ -5,11 +5,24 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="description" content="小水力發電示範獎勵審查評分系統">
   <title>小水力發電示範獎勵審查</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=3">
 </head>
 <body>
-  <header><h1>小水力發電示範獎勵審查</h1><div id="subtitle">安全連線中…</div></header>
-  <main><div id="notice" class="notice">正在載入資料…</div><div id="app"></div></main>
-  <script type="module" src="app.js?v=2"></script>
+  <div class="app-shell">
+    <header>
+      <div class="topline">
+        <div>
+          <h1>小水力發電示範獎勵審查</h1>
+          <p id="subtitle">安全連線中…</p>
+        </div>
+        <div class="save-state" id="connectionState">Firebase 雲端同步</div>
+      </div>
+    </header>
+    <nav aria-label="目前作業">
+      <button class="active" type="button" id="roleTab">載入中</button>
+    </nav>
+    <main><div id="notice" class="notice">正在載入資料…</div><div id="app"></div></main>
+  </div>
+  <script type="module" src="app.js?v=3"></script>
 </body>
 </html>

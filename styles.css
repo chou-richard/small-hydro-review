@@ -70,6 +70,9 @@ textarea { min-height:90px; resize:vertical; line-height:1.55; }
 .category-head h3 { color:#fff; margin:0; }
 .category-subtotal { font-weight:800; white-space:nowrap; }
 .criterion { display:grid; grid-template-columns:minmax(250px,1.5fr) 155px 165px 230px; gap:12px; align-items:center; padding:14px 16px; border-bottom:1px solid var(--line); }
+.criterion.score-error { background:#fff3f1; box-shadow:inset 4px 0 0 var(--bad); }
+.criterion.score-error input { border-color:var(--bad); background:#fff; }
+.validation-error { color:var(--bad); font-weight:800; }
 .criterion-name { font-weight:800; color:var(--navy); margin-bottom:5px; }
 .criterion-desc { color:#596579; font-size:14px; line-height:1.5; }
 .band-badge { display:inline-block; border-radius:999px; padding:5px 9px; font-size:13px; font-weight:800; background:#eef2f6; color:#475467; }

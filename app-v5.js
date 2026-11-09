@@ -1,5 +1,5 @@
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/13.2.0/firebase-app.js';
-import {getAuth,signInAnonymously} from 'https://www.gstatic.com/firebasejs/13.2.0/firebase-auth.js';
+import {getAuth,signInAnonymously,setPersistence,inMemoryPersistence} from 'https://www.gstatic.com/firebasejs/13.2.0/firebase-auth.js';
 import {getDatabase,ref,get,set,update} from 'https://www.gstatic.com/firebasejs/13.2.0/firebase-database.js';
 import {firebaseConfig} from './firebase-config.js';
 import qrcode from './qrcode-generator.mjs';
@@ -34,7 +34,7 @@ function logout(){sessionStorage.removeItem(loginSessionKey());location.reload()
 
 async function boot(){
   if(Object.values(firebaseConfig).some(v=>String(v).startsWith('__')))throw new Error('Firebase 尚未完成設定');
-  const app=initializeApp(firebaseConfig);db=getDatabase(app);auth=getAuth(app);await signInAnonymously(auth);user=auth.currentUser;
+  const app=initializeApp(firebaseConfig,'small-hydro-'+crypto.randomUUID());db=getDatabase(app);auth=getAuth(app);await setPersistence(auth,inMemoryPersistence);await signInAnonymously(auth);user=auth.currentUser;
   if(!ADMIN&&!TOKEN)throw new Error('網址缺少管理或委員專屬識別碼');
   await setSession(ADMIN?{adminToken:ADMIN}:{reviewerToken:TOKEN});
   config=(await get(ref(db,'config'))).val()||{};cases=(await get(ref(db,'cases'))).val()||{};normalizeConfig();
@@ -78,7 +78,7 @@ function updateMetrics(c){
   Object.entries(r.totals).forEach(([id,total])=>{const el=document.querySelector(`[data-subtotal="${id}"]`);if(el)el.textContent='小計 '+total.toFixed(1)+' / '+Number(c[id]).toFixed(1)});
   const done=$('#completionState'),filled=Object.values(r.counts).reduce((a,b)=>a+b,0);if(done){done.className=r.complete?'completion ok':'completion incomplete';done.textContent=r.complete?'已完成 15 項評分':'已填 '+filled+' / 15 項，未完成者不納入彙總平均'}
 }
-function assessmentPayload(c){const r=calculate(c);return {scores:draft.scores,comments:draft.comments,total:r.total,totals:r.totals,complete:r.complete,updatedAt:new Date().toISOString()}}
+function assessmentPayload(c){const r=calculate(c),scores=Object.fromEntries(config.criteria.map(i=>[i.itemId,draft.scores[i.itemId]??''])),comments=Object.fromEntries([...CATS,'overall'].map(id=>[id,draft.comments[id]??'']));return {scores,comments,total:r.total,totals:r.totals,complete:r.complete,updatedAt:new Date().toISOString()}}
 async function saveReviewerScore(){const btn=$('#saveBtn'),data=assessmentPayload(cases[activeCase]);btn.disabled=true;$('#status').textContent='儲存中…';try{await set(ref(db,`assessments/${TOKEN}/${activeCase}`),data);submissions[activeCase]=structuredClone(data);$('#status').textContent=(data.complete?'已完成 15 項':'已儲存未完成評分')+'，總分 '+data.total.toFixed(2)}catch(e){$('#status').textContent='儲存失敗：'+e.message}finally{btn.disabled=false}}
 
 async function loadAdmin(){

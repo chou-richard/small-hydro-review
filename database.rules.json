@@ -1,0 +1,52 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "adminTokens": {
+      "$token": {
+        ".read": "auth != null && root.child('sessions').child(auth.uid).child('adminToken').val() === $token",
+        ".write": false
+      }
+    },
+    "sessions": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "(!newData.child('adminToken').exists() || root.child('adminTokens').child(newData.child('adminToken').val()).val() === true) && (!newData.child('reviewerToken').exists() || root.child('reviewers').child(newData.child('reviewerToken').val()).child('active').val() === true)"
+      }
+    },
+    "config": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('adminTokens').child(root.child('sessions').child(auth.uid).child('adminToken').val()).val() === true"
+    },
+    "adminConfig": {
+      ".read": "auth != null && root.child('adminTokens').child(root.child('sessions').child(auth.uid).child('adminToken').val()).val() === true",
+      ".write": "auth != null && root.child('adminTokens').child(root.child('sessions').child(auth.uid).child('adminToken').val()).val() === true"
+    },
+    "cases": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('adminTokens').child(root.child('sessions').child(auth.uid).child('adminToken').val()).val() === true"
+    },
+    "reviewers": {
+      ".read": "auth != null && root.child('adminTokens').child(root.child('sessions').child(auth.uid).child('adminToken').val()).val() === true",
+      "$token": {
+        ".read": "auth != null && (root.child('sessions').child(auth.uid).child('reviewerToken').val() === $token || root.child('adminTokens').child(root.child('sessions').child(auth.uid).child('adminToken').val()).val() === true)",
+        ".write": "auth != null && root.child('adminTokens').child(root.child('sessions').child(auth.uid).child('adminToken').val()).val() === true"
+      }
+    },
+    "assessments": {
+      ".read": "auth != null && root.child('adminTokens').child(root.child('sessions').child(auth.uid).child('adminToken').val()).val() === true",
+      "$token": {
+        ".read": "auth != null && (root.child('sessions').child(auth.uid).child('reviewerToken').val() === $token || root.child('adminTokens').child(root.child('sessions').child(auth.uid).child('adminToken').val()).val() === true)",
+        "$caseId": {
+          ".write": "auth != null && root.child('sessions').child(auth.uid).child('reviewerToken').val() === $token",
+          ".validate": "newData.hasChildren(['scores','comments','total','totals','complete','updatedAt'])"
+        }
+      }
+    },
+    "exclusions": {
+      ".read": "auth != null && root.child('adminTokens').child(root.child('sessions').child(auth.uid).child('adminToken').val()).val() === true",
+      ".write": "auth != null && root.child('adminTokens').child(root.child('sessions').child(auth.uid).child('adminToken').val()).val() === true"
+    }
+  }
+}

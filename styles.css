@@ -111,11 +111,15 @@ td input { margin:0; }
 .qr-box.large { width:240px; height:240px; cursor:zoom-out; }
 .qr-download { white-space:nowrap; }
 .deliberation-card { padding:16px; }
-.deliberation-table { min-width:2100px; }
+.deliberation-table { min-width:900px; }
 .deliberation-table th,.deliberation-table td { text-align:center; vertical-align:middle; }
 .deliberation-table thead th { position:sticky; top:0; z-index:2; }
-.deliberation-table th:first-child { position:sticky; left:0; z-index:3; min-width:95px; background:#f7f9fc; }
+.deliberation-table th:first-child { position:sticky; left:0; z-index:3; min-width:280px; background:#f7f9fc; text-align:left; }
 .deliberation-table tbody th:first-child { background:#fff; color:var(--navy); }
+.deliberation-table thead th:first-child { z-index:4; }
+.deliberation-summary-row th,.deliberation-summary-row td { background:#f7f9fc; font-weight:700; }
+.deliberation-total-row th,.deliberation-total-row td { background:#eaf4ff; color:var(--navy); font-size:17px; }
+.deliberation-category { display:inline-block; min-width:92px; margin-right:8px; color:var(--teal-dark); font-size:12px; }
 @media (max-width:900px) {
   header { padding:20px 18px 16px; }
   nav { padding:0 10px; -webkit-overflow-scrolling:touch; scrollbar-width:thin; }

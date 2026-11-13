@@ -10,7 +10,7 @@ const params=new URLSearchParams(location.search),fragment=new URLSearchParams(l
 const ADMIN=fragment.get('admin')||params.get('admin')||'',TOKEN=fragment.get('token')||params.get('token')||'';
 const ACCESS_HASH='e4ffbb56f9fe9c50f61447d9582fdfe6be8727a51adabcad7d7d5da49d49a978';
 const ACCESS_VERSION='2026-11-10-v1';
-const APP_VERSION='30';
+const APP_VERSION='31';
 const CATS=['citizen','environment','composite'];
 const CAT_NAMES={citizen:'公民參與',environment:'友善環境',composite:'複合利用'};
 const CAT_COLORS={citizen:'#173f78',environment:'#007d7d',composite:'#1f5da8'};
@@ -222,20 +222,25 @@ async function persistCommentFields(ids){
   const {token,caseId}=currentCommentTarget();
   if(!token||!caseId)throw new Error('請先選擇委員與案件');
   const path=`assessments/${token}/${caseId}`;
+  let phase='取得委員寫入授權';
   const write=async()=>{
+    phase='讀取既有評分';
     const saved=(await get(ref(db,path))).val()||{};
     const scores=Object.fromEntries(config.criteria.map(item=>[item.itemId,saved.scores?.[item.itemId]??'']));
     const comments=Object.fromEntries([...CATS,'overall'].map(id=>[id,saved.comments?.[id]??'']));
     const now=new Date().toISOString(),commentUpdatedAt={...(saved.commentUpdatedAt||{})};
     for(const id of ids){comments[id]=document.querySelector(`[data-comment="${id}"]`)?.value??'';commentUpdatedAt[id]=now}
     const data={scores,comments,total:Number(saved.total)||0,totals:saved.totals||{citizen:0,environment:0,composite:0},complete:saved.complete===true,updatedAt:now,commentsUpdatedAt:now,commentUpdatedAt};
+    phase='寫入書面意見';
     await set(ref(db,path),data);
     if(ADMIN){adminData.assessments[token]||={};adminData.assessments[token][caseId]=structuredClone(data)}else submissions[caseId]=structuredClone(data);
     ids.forEach(id=>draft.comments[id]=comments[id]);
     return data;
   };
-  if(ADMIN){let result;await withReviewerAccess(token,adminData.reviewers[token],async()=>{result=await write()});return result}
-  return write();
+  try{
+    if(ADMIN){let result;await withReviewerAccess(token,adminData.reviewers[token],async()=>{result=await write()});return result}
+    return await write();
+  }catch(error){throw new Error(`${phase}階段：${error.message}`)}
 }
 async function saveSingleCommentForCurrent(event,id){
   event?.preventDefault();event?.stopPropagation();

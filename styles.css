@@ -110,6 +110,12 @@ td input { margin:0; }
 .qr-box svg { width:100%; height:100%; display:block; }
 .qr-box.large { width:240px; height:240px; cursor:zoom-out; }
 .qr-download { white-space:nowrap; }
+.deliberation-card { padding:16px; }
+.deliberation-table { min-width:2100px; }
+.deliberation-table th,.deliberation-table td { text-align:center; vertical-align:middle; }
+.deliberation-table thead th { position:sticky; top:0; z-index:2; }
+.deliberation-table th:first-child { position:sticky; left:0; z-index:3; min-width:95px; background:#f7f9fc; }
+.deliberation-table tbody th:first-child { background:#fff; color:var(--navy); }
 @media (max-width:900px) {
   header { padding:20px 18px 16px; }
   nav { padding:0 10px; -webkit-overflow-scrolling:touch; scrollbar-width:thin; }

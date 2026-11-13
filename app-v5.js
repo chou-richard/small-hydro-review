@@ -10,7 +10,7 @@ const params=new URLSearchParams(location.search),fragment=new URLSearchParams(l
 const ADMIN=fragment.get('admin')||params.get('admin')||'',TOKEN=fragment.get('token')||params.get('token')||'';
 const ACCESS_HASH='e4ffbb56f9fe9c50f61447d9582fdfe6be8727a51adabcad7d7d5da49d49a978';
 const ACCESS_VERSION='2026-11-10-v1';
-const APP_VERSION='29';
+const APP_VERSION='30';
 const CATS=['citizen','environment','composite'];
 const CAT_NAMES={citizen:'公民參與',environment:'友善環境',composite:'複合利用'};
 const CAT_COLORS={citizen:'#173f78',environment:'#007d7d',composite:'#1f5da8'};
@@ -73,7 +73,7 @@ function wireScoreControls(c){
   document.querySelectorAll('[data-pick]').forEach(el=>el.onchange=e=>{if(e.target.value!==''){const id=e.target.dataset.pick;draft.scores[id]=Number(e.target.value);const input=document.querySelector(`[data-score="${id}"]`);if(input){input.value=e.target.value;input.closest('.criterion')?.classList.remove('score-error');input.removeAttribute('aria-invalid')}updateMetrics(c)}});
   document.querySelectorAll('[data-comment]').forEach(el=>el.oninput=e=>draft.comments[e.target.dataset.comment]=e.target.value);
 }
-function commentControlMarkup(id,name){const savedAt=submissions[activeCase]?.commentUpdatedAt?.[id];return `<div class="comment-save-row no-print"><span class="muted small-text" data-single-comment-status="${id}">${savedAt?'已儲存：'+new Date(savedAt).toLocaleString():'尚未單獨儲存'}</span><button type="button" class="btn secondary" data-save-single-comment="${id}" onclick="window.saveSingleComment(event,'${id}')">儲存${esc(name)}</button></div>`}
+function commentControlMarkup(id,name){const savedAt=(ADMIN?adminData.assessments[adminReviewer]?.[adminCase]:submissions[activeCase])?.commentUpdatedAt?.[id];return `<div class="comment-save-row no-print"><span class="muted small-text" data-single-comment-status="${id}">${savedAt?'已儲存：'+new Date(savedAt).toLocaleString():'尚未單獨儲存'}</span><button type="button" class="btn secondary" data-save-single-comment="${id}" onclick="window.saveSingleComment(event,'${id}')">儲存${esc(name)}</button></div>`}
 function validateAllScores(){const invalid=[...document.querySelectorAll('[data-score]')].filter(input=>{const raw=input.value.trim(),value=Number(raw),bad=raw===''||!Number.isFinite(value)||value<0||value>100;input.closest('.criterion')?.classList.toggle('score-error',bad);if(bad)input.setAttribute('aria-invalid','true');else input.removeAttribute('aria-invalid');return bad});if(!invalid.length)return true;const missing=invalid.filter(x=>x.value.trim()==='').length,outOfRange=invalid.length-missing,parts=[];if(missing)parts.push(`尚有 ${missing} 題未評分`);if(outOfRange)parts.push(`${outOfRange} 題分數須介於 0–100`);const status=$('#status');status.textContent=parts.join('，')+'；請完成後再儲存。';status.className='validation-error';invalid[0].closest('.criterion')?.scrollIntoView({behavior:'smooth',block:'center'});invalid[0].focus({preventScroll:true});return false}
 function updateMetrics(c){
   const r=calculate(c);config.criteria.forEach(i=>{const v=draft.scores[i.itemId],b=bandFor(v),x=Number(v),cap=Number(c[i.categoryId])/5,con=v!==''&&v!=null&&Number.isFinite(x)?cap*x/100:null,bl=document.querySelector(`[data-band="${i.itemId}"]`),de=document.querySelector(`[data-detail="${i.itemId}"]`),ce=document.querySelector(`[data-contrib="${i.itemId}"]`);if(bl){bl.textContent=b?b.title:'未評分';bl.className='band-badge'+(b?' band-'+(5-config.bands.indexOf(b)):'')}if(de)de.textContent=b?b.detail:'';if(ce)ce.textContent=con===null?'':'實得 '+con.toFixed(2)});
@@ -217,7 +217,46 @@ async function restoreProjectData(d){
 async function importProject(e){const file=e.target.files?.[0];e.target.value='';if(!file)return;try{const parsed=JSON.parse(await file.text()),d=parsed?.format==='small-hydro-review-cloud-project'?parsed.data:parsed;if(!confirm('匯入 JSON 會以檔案內容替換目前線上設定、案件、委員與評分。是否繼續？'))return;await restoreProjectData(d);alert('專案 JSON 已完整匯入雲端。');await loadAdmin()}catch(err){await setSession({adminToken:ADMIN});alert('無法匯入專案：'+err.message)}}
 
 function showError(msg){$('#notice').className='notice error';$('#notice').textContent=msg}
-window.saveReviewerComments=saveReviewerComments;
-window.saveSingleComment=saveSingleComment;
+function currentCommentTarget(){return {token:ADMIN?adminReviewer:TOKEN,caseId:ADMIN?adminCase:activeCase}}
+async function persistCommentFields(ids){
+  const {token,caseId}=currentCommentTarget();
+  if(!token||!caseId)throw new Error('請先選擇委員與案件');
+  const path=`assessments/${token}/${caseId}`;
+  const write=async()=>{
+    const saved=(await get(ref(db,path))).val()||{};
+    const scores=Object.fromEntries(config.criteria.map(item=>[item.itemId,saved.scores?.[item.itemId]??'']));
+    const comments=Object.fromEntries([...CATS,'overall'].map(id=>[id,saved.comments?.[id]??'']));
+    const now=new Date().toISOString(),commentUpdatedAt={...(saved.commentUpdatedAt||{})};
+    for(const id of ids){comments[id]=document.querySelector(`[data-comment="${id}"]`)?.value??'';commentUpdatedAt[id]=now}
+    const data={scores,comments,total:Number(saved.total)||0,totals:saved.totals||{citizen:0,environment:0,composite:0},complete:saved.complete===true,updatedAt:now,commentsUpdatedAt:now,commentUpdatedAt};
+    await set(ref(db,path),data);
+    if(ADMIN){adminData.assessments[token]||={};adminData.assessments[token][caseId]=structuredClone(data)}else submissions[caseId]=structuredClone(data);
+    ids.forEach(id=>draft.comments[id]=comments[id]);
+    return data;
+  };
+  if(ADMIN){let result;await withReviewerAccess(token,adminData.reviewers[token],async()=>{result=await write()});return result}
+  return write();
+}
+async function saveSingleCommentForCurrent(event,id){
+  event?.preventDefault();event?.stopPropagation();
+  const btn=document.querySelector(`[data-save-single-comment="${id}"]`),field=document.querySelector(`[data-comment="${id}"]`),fieldStatus=document.querySelector(`[data-single-comment-status="${id}"]`),status=$('#status');
+  if(!btn||!field||btn.disabled)return;
+  const name=id==='overall'?'綜合意見':CAT_NAMES[id];
+  if(!field.value.trim()){const message=`請先填寫${name}內容。`;fieldStatus.textContent=message;alert(message);field.focus();return}
+  btn.disabled=true;btn.textContent='儲存中…';fieldStatus.textContent='正在儲存…';status.textContent=`正在儲存${name}…`;
+  try{const data=await persistCommentFields([id]);btn.textContent='已完成儲存 ✓';fieldStatus.className='completion ok small-text';fieldStatus.textContent='已儲存：'+new Date(data.commentUpdatedAt[id]).toLocaleString();status.className='completion ok';status.textContent=`${name}已完成儲存`;alert(`${name}已完成儲存。`)}
+  catch(error){const message=`${name}儲存失敗：${error.message}`;btn.textContent=`儲存${name}`;fieldStatus.className='validation-error small-text';fieldStatus.textContent=message;status.className='validation-error';status.textContent=message;alert(message)}
+  finally{btn.disabled=false}
+}
+async function saveAllCommentsForCurrent(event){
+  event?.preventDefault();event?.stopPropagation();const btn=$('#saveCommentsBtn'),status=$('#status');if(!btn||btn.disabled)return;
+  const ids=[...CATS,'overall'];if(!ids.some(id=>document.querySelector(`[data-comment="${id}"]`)?.value.trim())){alert('請至少填寫一欄書面意見後再儲存。');return}
+  btn.disabled=true;btn.textContent='儲存中…';status.textContent='正在儲存全部書面意見…';
+  try{const data=await persistCommentFields(ids);for(const id of ids){const fieldStatus=document.querySelector(`[data-single-comment-status="${id}"]`);if(fieldStatus){fieldStatus.className='completion ok small-text';fieldStatus.textContent='已儲存：'+new Date(data.commentUpdatedAt[id]).toLocaleString()}}btn.textContent='書面意見已儲存 ✓';status.className='completion ok';status.textContent='全部書面意見已完成儲存';alert('全部書面意見已完成儲存。')}
+  catch(error){const message=`書面意見儲存失敗：${error.message}`;btn.textContent='儲存全部書面意見';status.className='validation-error';status.textContent=message;alert(message)}
+  finally{btn.disabled=false}
+}
+window.saveReviewerComments=saveAllCommentsForCurrent;
+window.saveSingleComment=saveSingleCommentForCurrent;
 $('#logoutBtn').onclick=logout;
 requireLogin().then(boot).catch(e=>{if($('#appShell').classList.contains('hide')){$('#loginMessage').textContent=e.message}else showError(e.message)});

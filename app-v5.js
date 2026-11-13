@@ -151,12 +151,65 @@ function bindProjectBar(){
 }
 function newCloudId(){return 'project_'+Date.now().toString(36)+'_'+randomToken().slice(0,8)}
 async function saveCloudProject(asNew=false,forcedName=''){let id=asNew?'':(adminConfig.currentProjectId||''),name=forcedName||(id?adminConfig.cloudProjects?.[id]?.name:'');if(!id){if(!forcedName){const entered=prompt('請輸入線上專案名稱：',name||config.title||'小水力審查專案');if(entered===null)return;name=entered.trim()||'小水力審查專案'}id=newCloudId()}const entry={name:name||config.title,savedAt:new Date().toISOString(),data:projectData()};await set(ref(db,`adminConfig/cloudProjects/${id}`),entry);await set(ref(db,'adminConfig/currentProjectId'),id);adminConfig.cloudProjects||={};adminConfig.cloudProjects[id]=entry;adminConfig.currentProjectId=id;renderAdmin();$('#cloudProjectStatus').textContent=`已儲存線上專案：${entry.name}｜${new Date(entry.savedAt).toLocaleString()}`}
-async function openCloudProject(){const id=$('#cloudProjectSelect').value,entry=adminConfig.cloudProjects?.[id];if(!id||!entry)return alert('請先選擇要開啟的線上專案');if(!confirm(`確定開啟線上專案「${entry.name}」？\n\n目前畫面中尚未儲存的變更會被取代。`))return;await restoreProjectData(entry.data);await set(ref(db,'adminConfig/currentProjectId'),id);adminConfig.currentProjectId=id;alert(`已開啟線上專案：${entry.name}`);await loadAdmin()}
+async function openCloudProject(){
+  const id=$('#cloudProjectSelect').value,entry=adminConfig.cloudProjects?.[id];
+  if(!id||!entry)return alert('請先選擇要開啟的線上專案');
+  if(id===adminConfig.currentProjectId)return alert(`目前已開啟線上專案：${entry.name}`);
+  if(!confirm(`確定開啟線上專案「${entry.name}」？\n\n系統會先自動保存目前專案，再切換案件、委員、評分與各子頁資料。`))return;
+  const btn=$('#openProject'),previousId=adminConfig.currentProjectId||'',previousEntry=adminConfig.cloudProjects?.[previousId],rollbackData=projectData();
+  btn.disabled=true;$('#cloudProjectStatus').textContent=`正在備份目前專案並開啟：${entry.name}…`;
+  try{
+    if(previousId&&previousEntry){
+      const backup={name:previousEntry.name||config.title,savedAt:new Date().toISOString(),data:rollbackData};
+      await set(ref(db,`adminConfig/cloudProjects/${previousId}`),backup);
+      adminConfig.cloudProjects[previousId]=backup;
+    }
+    await restoreProjectData(entry.data);
+    await set(ref(db,'adminConfig/currentProjectId'),id);
+    adminConfig.currentProjectId=id;
+    config=(await get(ref(db,'config'))).val()||{};
+    cases=(await get(ref(db,'cases'))).val()||{};
+    normalizeConfig();
+    adminReviewer='';adminCase='';activeCase='';
+    await loadAdmin();
+    $('#cloudProjectStatus').textContent=`已開啟線上專案：${entry.name}｜所有分頁已同步更新`;
+    alert(`已開啟線上專案：${entry.name}\n\n基本設定、委員評分、彙總排名及評分研商頁面均已同步更新。`);
+  }catch(err){
+    let rollbackMessage='';
+    try{
+      await restoreProjectData(rollbackData);
+      await set(ref(db,'adminConfig/currentProjectId'),previousId||null);
+      adminConfig.currentProjectId=previousId;
+      config=(await get(ref(db,'config'))).val()||{};
+      cases=(await get(ref(db,'cases'))).val()||{};
+      normalizeConfig();
+      adminReviewer='';adminCase='';activeCase='';
+      await loadAdmin();
+      rollbackMessage='；已自動回復切換前資料';
+    }catch(rollbackErr){rollbackMessage=`；自動回復失敗：${rollbackErr.message}`}
+    await setSession({adminToken:ADMIN});
+    const status=$('#cloudProjectStatus');if(status)status.textContent=`開啟失敗：${err.message}${rollbackMessage}`;
+    alert(`無法開啟線上專案「${entry.name}」：\n${err.message}${rollbackMessage}`);
+  }finally{if(document.body.contains(btn))btn.disabled=false}
+}
 async function newCloudProject(){if(!confirm('建立新線上專案會清空目前案件評分與排除設定，但保留委員及專屬網址。是否繼續？'))return;const entered=prompt('請輸入新線上專案名稱：','小水力審查專案');if(entered===null)return;const name=entered.trim()||'小水力審查專案';await clearAssessments(adminData.assessments);await set(ref(db,'exclusions'),null);await set(ref(db,'cases'),{case1:{no:'案1',organization:'',name:'',citizen:50,environment:30,composite:20,active:true}});await update(ref(db,'config'),{title:name,passScore:70});config=(await get(ref(db,'config'))).val()||{};normalizeConfig();cases=(await get(ref(db,'cases'))).val()||{};adminData.assessments={};adminData.exclusions={};adminTab='setup';await saveCloudProject(true,name)}
 async function withReviewerAccess(token,record,task){const wasInactive=record?.active===false;if(wasInactive)await update(ref(db,'reviewers/'+token),{active:true});await setSession({adminToken:ADMIN,reviewerToken:token});try{await task()}finally{await setSession({adminToken:ADMIN});if(wasInactive)await update(ref(db,'reviewers/'+token),{active:false})}}
 async function clearAssessments(source){for(const [token,byCase] of Object.entries(source||{}))await withReviewerAccess(token,adminData.reviewers[token],async()=>{for(const caseId of Object.keys(byCase||{}))await set(ref(db,`assessments/${token}/${caseId}`),null)})}
 async function syncReviewers(next){const all=new Set([...Object.keys(adminData.reviewers),...Object.keys(next||{})]);for(const token of all)await set(ref(db,'reviewers/'+token),next?.[token]||null)}
-async function restoreProjectData(d){if(!d?.config||!d?.cases||!d?.reviewers||!d?.assessments)throw new Error('專案資料格式不符');await clearAssessments(adminData.assessments);await syncReviewers(d.reviewers);await set(ref(db,'config'),d.config);await set(ref(db,'cases'),d.cases);await set(ref(db,'exclusions'),d.exclusions||null);const {cloudProjects,currentProjectId,...portableAdminConfig}=d.adminConfig||{};if(Object.keys(portableAdminConfig).length)await update(ref(db,'adminConfig'),portableAdminConfig);adminData.reviewers=d.reviewers;for(const [token,byCase] of Object.entries(d.assessments))await withReviewerAccess(token,d.reviewers[token],async()=>{for(const [caseId,value] of Object.entries(byCase||{}))await set(ref(db,`assessments/${token}/${caseId}`),value)});config=d.config;normalizeConfig();cases=d.cases;adminData.assessments=d.assessments;adminData.exclusions=d.exclusions||{}}
+async function restoreProjectData(d){
+  if(!d?.config||!d?.cases||!d?.reviewers)throw new Error('專案資料格式不符：缺少設定、案件或委員資料');
+  const nextAssessments=d.assessments||{},nextExclusions=d.exclusions||{};
+  await clearAssessments(adminData.assessments);
+  await syncReviewers(d.reviewers);
+  await set(ref(db,'config'),d.config);
+  await set(ref(db,'cases'),d.cases);
+  await set(ref(db,'exclusions'),Object.keys(nextExclusions).length?nextExclusions:null);
+  const {cloudProjects,currentProjectId,...portableAdminConfig}=d.adminConfig||{};
+  if(Object.keys(portableAdminConfig).length)await update(ref(db,'adminConfig'),portableAdminConfig);
+  adminData.reviewers=d.reviewers;
+  for(const [token,byCase] of Object.entries(nextAssessments))await withReviewerAccess(token,d.reviewers[token],async()=>{for(const [caseId,value] of Object.entries(byCase||{}))await set(ref(db,`assessments/${token}/${caseId}`),value)});
+  config=d.config;normalizeConfig();cases=d.cases;adminData.assessments=nextAssessments;adminData.exclusions=nextExclusions;
+}
 async function importProject(e){const file=e.target.files?.[0];e.target.value='';if(!file)return;try{const parsed=JSON.parse(await file.text()),d=parsed?.format==='small-hydro-review-cloud-project'?parsed.data:parsed;if(!confirm('匯入 JSON 會以檔案內容替換目前線上設定、案件、委員與評分。是否繼續？'))return;await restoreProjectData(d);alert('專案 JSON 已完整匯入雲端。');await loadAdmin()}catch(err){await setSession({adminToken:ADMIN});alert('無法匯入專案：'+err.message)}}
 
 function showError(msg){$('#notice').className='notice error';$('#notice').textContent=msg}

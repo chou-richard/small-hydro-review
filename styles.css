@@ -82,6 +82,7 @@ textarea { min-height:90px; resize:vertical; line-height:1.55; }
 .band-2 { background:#fff1e8; color:#b54708; }
 .band-1 { background:#fff0ef; color:#b42318; }
 .category-comments { padding:14px 16px; background:#fafcff; }
+.comment-save-row { display:flex; align-items:center; justify-content:flex-end; gap:12px; margin-top:10px; }
 .completion { font-weight:800; }
 .completion.ok,.pass { color:var(--ok); font-weight:800; }
 .completion.incomplete { color:var(--warn); }
@@ -172,6 +173,8 @@ td input { margin:0; }
   .category-head h3 { font-size:18px; line-height:1.45; }
   .category-subtotal { white-space:normal; }
   .category-comments { padding:13px; }
+  .comment-save-row { align-items:stretch; flex-direction:column; }
+  .comment-save-row .btn { width:100%; }
   .score-summary,.metrics { grid-template-columns:1fr 1fr; }
   .metric strong { font-size:20px; }
   .savebar { left:0; right:0; bottom:0; border-radius:10px 10px 0 0; flex-direction:column; align-items:stretch; padding:10px 12px; }

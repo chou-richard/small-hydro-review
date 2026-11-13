@@ -10,7 +10,7 @@ const params=new URLSearchParams(location.search),fragment=new URLSearchParams(l
 const ADMIN=fragment.get('admin')||params.get('admin')||'',TOKEN=fragment.get('token')||params.get('token')||'';
 const ACCESS_HASH='e4ffbb56f9fe9c50f61447d9582fdfe6be8727a51adabcad7d7d5da49d49a978';
 const ACCESS_VERSION='2026-11-10-v1';
-const APP_VERSION='31';
+const APP_VERSION='32';
 const CATS=['citizen','environment','composite'];
 const CAT_NAMES={citizen:'公民參與',environment:'友善環境',composite:'複合利用'};
 const CAT_COLORS={citizen:'#173f78',environment:'#007d7d',composite:'#1f5da8'};
@@ -62,7 +62,7 @@ function renderReviewer(){
 }
 function scorePanel(c,reviewerName,saved){
   const filled=Object.values(draft.scores).filter(v=>v!==''&&Number.isFinite(Number(v))).length;
-  return `<div class="card"><div class="card-title"><div><h3>${esc(reviewerName)}｜${esc(c.no)} ${esc(c.name)}</h3><div class="case-meta">${esc(c.organization||'')}</div></div><button type="button" class="btn secondary no-print" onclick="window.print()">列印當前評分表</button></div><div class="score-summary" id="metrics"></div><div class="${filled===15?'completion ok':'completion incomplete'}" id="completionState">${filled===15?'已完成 15 項評分':'已填 '+filled+' / 15 項；可先單獨儲存書面意見，15 題全部完成後才能儲存評分'}</div></div>${CATS.map(cat=>renderCategory(c,cat)).join('')}<div class="card"><h3>總評</h3>${commentControlMarkup('overall','綜合意見')}<label class="comment-field-label">綜合意見<textarea data-comment="overall">${esc(draft.comments.overall||'')}</textarea></label></div><div class="savebar no-print"><span id="status" class="muted">系統 v${APP_VERSION}｜${saved?.updatedAt?'上次儲存：'+new Date(saved.updatedAt).toLocaleString():'尚未儲存'}</span><div class="toolbar"><button type="button" class="btn secondary" id="saveCommentsBtn" onclick="window.saveReviewerComments(event)">儲存全部書面意見</button><button type="button" class="btn" id="saveBtn">儲存本案評分</button></div></div>`;
+  return `<div class="card"><div class="card-title"><div><h3>${esc(reviewerName)}｜${esc(c.no)} ${esc(c.name)}</h3><div class="case-meta">${esc(c.organization||'')}</div></div><button type="button" class="btn secondary no-print" onclick="window.print()">列印當前評分表</button></div><div class="score-summary" id="metrics"></div><div class="${filled===15?'completion ok':'completion incomplete'}" id="completionState">${filled===15?'已完成 15 項評分':'已填 '+filled+' / 15 項；可先單獨儲存書面意見，15 題全部完成後才能儲存評分'}</div></div>${CATS.map(cat=>renderCategory(c,cat)).join('')}<div class="savebar no-print"><span id="status" class="muted">系統 v${APP_VERSION}｜${saved?.updatedAt?'上次儲存：'+new Date(saved.updatedAt).toLocaleString():'尚未儲存'}</span><div class="toolbar"><button type="button" class="btn secondary" id="saveCommentsBtn" onclick="window.saveReviewerComments(event)">儲存三大項書面意見</button><button type="button" class="btn" id="saveBtn">儲存本案評分</button></div></div>`;
 }
 function renderCategory(c,cat){
   const items=config.criteria.filter(i=>i.categoryId===cat),name=items[0]?.categoryName||CAT_NAMES[cat],subtotal=items.reduce((sum,i)=>{const v=draft.scores[i.itemId];return sum+(v===''||v==null||!Number.isFinite(Number(v))?0:Number(c[cat])/5*Math.max(0,Math.min(100,Number(v)))/100)},0);
@@ -255,10 +255,10 @@ async function saveSingleCommentForCurrent(event,id){
 }
 async function saveAllCommentsForCurrent(event){
   event?.preventDefault();event?.stopPropagation();const btn=$('#saveCommentsBtn'),status=$('#status');if(!btn||btn.disabled)return;
-  const ids=[...CATS,'overall'];if(!ids.some(id=>document.querySelector(`[data-comment="${id}"]`)?.value.trim())){alert('請至少填寫一欄書面意見後再儲存。');return}
+  const ids=[...CATS];if(!ids.some(id=>document.querySelector(`[data-comment="${id}"]`)?.value.trim())){alert('請至少填寫一欄書面意見後再儲存。');return}
   btn.disabled=true;btn.textContent='儲存中…';status.textContent='正在儲存全部書面意見…';
   try{const data=await persistCommentFields(ids);for(const id of ids){const fieldStatus=document.querySelector(`[data-single-comment-status="${id}"]`);if(fieldStatus){fieldStatus.className='completion ok small-text';fieldStatus.textContent='已儲存：'+new Date(data.commentUpdatedAt[id]).toLocaleString()}}btn.textContent='書面意見已儲存 ✓';status.className='completion ok';status.textContent='全部書面意見已完成儲存';alert('全部書面意見已完成儲存。')}
-  catch(error){const message=`書面意見儲存失敗：${error.message}`;btn.textContent='儲存全部書面意見';status.className='validation-error';status.textContent=message;alert(message)}
+  catch(error){const message=`書面意見儲存失敗：${error.message}`;btn.textContent='儲存三大項書面意見';status.className='validation-error';status.textContent=message;alert(message)}
   finally{btn.disabled=false}
 }
 window.saveReviewerComments=saveAllCommentsForCurrent;

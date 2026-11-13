@@ -10,7 +10,7 @@ const params=new URLSearchParams(location.search),fragment=new URLSearchParams(l
 const ADMIN=fragment.get('admin')||params.get('admin')||'',TOKEN=fragment.get('token')||params.get('token')||'';
 const ACCESS_HASH='e4ffbb56f9fe9c50f61447d9582fdfe6be8727a51adabcad7d7d5da49d49a978';
 const ACCESS_VERSION='2026-11-10-v1';
-const APP_VERSION='32';
+const APP_VERSION='33';
 const CATS=['citizen','environment','composite'];
 const CAT_NAMES={citizen:'公民參與',environment:'友善環境',composite:'複合利用'};
 const CAT_COLORS={citizen:'#173f78',environment:'#007d7d',composite:'#1f5da8'};
@@ -247,17 +247,16 @@ async function saveSingleCommentForCurrent(event,id){
   const btn=document.querySelector(`[data-save-single-comment="${id}"]`),field=document.querySelector(`[data-comment="${id}"]`),fieldStatus=document.querySelector(`[data-single-comment-status="${id}"]`),status=$('#status');
   if(!btn||!field||btn.disabled)return;
   const name=id==='overall'?'綜合意見':CAT_NAMES[id];
-  if(!field.value.trim()){const message=`請先填寫${name}內容。`;fieldStatus.textContent=message;alert(message);field.focus();return}
   btn.disabled=true;btn.textContent='儲存中…';fieldStatus.textContent='正在儲存…';status.textContent=`正在儲存${name}…`;
-  try{const data=await persistCommentFields([id]);btn.textContent='已完成儲存 ✓';fieldStatus.className='completion ok small-text';fieldStatus.textContent='已儲存：'+new Date(data.commentUpdatedAt[id]).toLocaleString();status.className='completion ok';status.textContent=`${name}已完成儲存`;alert(`${name}已完成儲存。`)}
+  try{const data=await persistCommentFields([id]),cleared=!field.value.trim();btn.textContent='已完成儲存 ✓';fieldStatus.className='completion ok small-text';fieldStatus.textContent=(cleared?'已清空並儲存：':'已儲存：')+new Date(data.commentUpdatedAt[id]).toLocaleString();status.className='completion ok';status.textContent=`${name}${cleared?'已清空並儲存':'已完成儲存'}`;alert(`${name}${cleared?'已清空並儲存':'已完成儲存'}。`)}
   catch(error){const message=`${name}儲存失敗：${error.message}`;btn.textContent=`儲存${name}`;fieldStatus.className='validation-error small-text';fieldStatus.textContent=message;status.className='validation-error';status.textContent=message;alert(message)}
   finally{btn.disabled=false}
 }
 async function saveAllCommentsForCurrent(event){
   event?.preventDefault();event?.stopPropagation();const btn=$('#saveCommentsBtn'),status=$('#status');if(!btn||btn.disabled)return;
-  const ids=[...CATS];if(!ids.some(id=>document.querySelector(`[data-comment="${id}"]`)?.value.trim())){alert('請至少填寫一欄書面意見後再儲存。');return}
+  const ids=[...CATS];
   btn.disabled=true;btn.textContent='儲存中…';status.textContent='正在儲存全部書面意見…';
-  try{const data=await persistCommentFields(ids);for(const id of ids){const fieldStatus=document.querySelector(`[data-single-comment-status="${id}"]`);if(fieldStatus){fieldStatus.className='completion ok small-text';fieldStatus.textContent='已儲存：'+new Date(data.commentUpdatedAt[id]).toLocaleString()}}btn.textContent='書面意見已儲存 ✓';status.className='completion ok';status.textContent='全部書面意見已完成儲存';alert('全部書面意見已完成儲存。')}
+  try{const data=await persistCommentFields(ids);for(const id of ids){const fieldStatus=document.querySelector(`[data-single-comment-status="${id}"]`);if(fieldStatus){fieldStatus.className='completion ok small-text';fieldStatus.textContent=(data.comments[id]?.trim()?'已儲存：':'已清空並儲存：')+new Date(data.commentUpdatedAt[id]).toLocaleString()}}btn.textContent='書面意見已儲存 ✓';status.className='completion ok';status.textContent='三大項書面意見已完成儲存（含空白欄位）';alert('三大項書面意見已完成儲存（含空白欄位）。')}
   catch(error){const message=`書面意見儲存失敗：${error.message}`;btn.textContent='儲存三大項書面意見';status.className='validation-error';status.textContent=message;alert(message)}
   finally{btn.disabled=false}
 }

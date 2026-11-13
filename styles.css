@@ -117,9 +117,9 @@ td input { margin:0; }
 .deliberation-table th:first-child { position:sticky; left:0; z-index:3; min-width:280px; background:#f7f9fc; text-align:left; }
 .deliberation-table tbody th:first-child { background:#fff; color:var(--navy); }
 .deliberation-table thead th:first-child { z-index:4; }
-.deliberation-transposed { table-layout:fixed; min-width:760px; }
+.deliberation-transposed { table-layout:fixed; }
 .deliberation-transposed th:first-child { width:190px; min-width:190px; white-space:normal; overflow-wrap:anywhere; }
-.deliberation-transposed th:not(:first-child),.deliberation-transposed td:not(:first-child) { width:auto; padding-left:6px; padding-right:6px; }
+.deliberation-transposed th:not(:first-child),.deliberation-transposed td:not(:first-child) { width:108px; min-width:108px; max-width:108px; padding-left:4px; padding-right:4px; }
 .deliberation-summary-row th,.deliberation-summary-row td { background:#f7f9fc; font-weight:700; }
 .deliberation-category-row th,.deliberation-category-row td { background:#eaf4ff; color:var(--navy); font-weight:800; border-top:2px solid #b8d3ee; }
 .deliberation-group-name { display:block; font-size:15px; }

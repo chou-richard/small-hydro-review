@@ -10,7 +10,7 @@ const params=new URLSearchParams(location.search),fragment=new URLSearchParams(l
 const ADMIN=fragment.get('admin')||params.get('admin')||'',TOKEN=fragment.get('token')||params.get('token')||'';
 const ACCESS_HASH='e4ffbb56f9fe9c50f61447d9582fdfe6be8727a51adabcad7d7d5da49d49a978';
 const ACCESS_VERSION='2026-11-10-v1';
-const APP_VERSION='34';
+const APP_VERSION='35';
 const CATS=['citizen','environment','composite'];
 const CAT_NAMES={citizen:'公民參與',environment:'友善環境',composite:'複合利用'};
 const CAT_COLORS={citizen:'#173f78',environment:'#007d7d',composite:'#1f5da8'};
@@ -51,14 +51,35 @@ function calculate(c,values=draft.scores||{}){const totals={citizen:0,environmen
 
 async function loadReviewer(){
   reviewer=(await get(ref(db,'reviewers/'+TOKEN))).val();if(!reviewer||!reviewer.active)throw new Error('無效或已停用的委員網址');
-  submissions=(await get(ref(db,'assessments/'+TOKEN))).val()||{};activeCase=activeCases()[0]?.[0]||'';
+  submissions=(await get(ref(db,'assessments/'+TOKEN))).val()||{};
+  const enabled=activeCases();
+  activeCase=enabled.reduce((latest,[id])=>{
+    const time=Date.parse(submissions[id]?.updatedAt||'');
+    return Number.isFinite(time)&&time>latest.time?{id,time}:latest;
+  },{id:enabled[0]?.[0]||'',time:-Infinity}).id;
   $('#subtitle').textContent='雲端評分、即時儲存與審查結果彙總';$('#mainNav').innerHTML=`<button class="active" type="button">委員評分｜${esc(reviewer.name)}</button>`;$('#notice').classList.add('hide');renderReviewer();
+}
+async function refreshReviewerCase(caseId){
+  const select=$('#caseSel'),reload=$('#reloadSavedCase');
+  if(select)select.disabled=true;
+  if(reload)reload.disabled=true;
+  try{
+    const saved=(await get(ref(db,`assessments/${TOKEN}/${caseId}`))).val();
+    if(saved)submissions[caseId]=saved;else delete submissions[caseId];
+    activeCase=caseId;renderReviewer();
+  }catch(error){
+    if(select){select.value=activeCase;select.disabled=false}
+    if(reload)reload.disabled=false;
+    const state=$('#reviewerLoadState');
+    if(state){state.className='validation-error';state.textContent='讀取前次評分失敗：'+error.message}
+  }
 }
 function renderReviewer(){
   const c=cases[activeCase];if(!c)return showError('目前沒有啟用中的案件');
   draft=structuredClone(submissions[activeCase]||{scores:{},comments:{}});draft.scores||={};draft.comments||={};
-  $('#app').innerHTML=`<section class="section-title"><h2>委員評分</h2><p class="lede">每個子項輸入 0–100 分，也可用「快速選級距」帶入該級距最高分。</p></section><div class="score-head no-print"><label>審查委員<input value="${esc(reviewer.name)}" disabled></label><label>審查案件<select id="caseSel">${activeCases().map(([id,x])=>`<option value="${id}" ${id===activeCase?'selected':''}>${esc(x.no)}｜${esc(x.organization)}｜${esc(x.name)}</option>`).join('')}</select></label></div>${scorePanel(c,reviewer.name,submissions[activeCase])}`;
-  $('#caseSel').onchange=e=>{activeCase=e.target.value;renderReviewer()};wireScoreControls(c);$('#saveBtn').onclick=saveReviewerScore;updateMetrics(c);
+  const saved=submissions[activeCase],savedState=saved?.updatedAt?'已載入前次儲存資料：'+new Date(saved.updatedAt).toLocaleString():'本案尚無已儲存的評分紀錄';
+  $('#app').innerHTML=`<section class="section-title"><h2>委員評分</h2><p class="lede">每個子項輸入 0–100 分，也可用「快速選級距」帶入該級距最高分。</p></section><div class="score-head no-print"><label>審查委員<input value="${esc(reviewer.name)}" disabled></label><label>審查案件<select id="caseSel">${activeCases().map(([id,x])=>`<option value="${id}" ${id===activeCase?'selected':''}>${esc(x.no)}｜${esc(x.organization)}｜${esc(x.name)}</option>`).join('')}</select></label></div><div class="toolbar no-print" style="margin:0 0 12px;align-items:center"><span id="reviewerLoadState" class="muted">${esc(savedState)}</span><button type="button" class="btn secondary" id="reloadSavedCase">重新載入已儲存資料</button></div>${scorePanel(c,reviewer.name,saved)}`;
+  $('#caseSel').onchange=e=>refreshReviewerCase(e.target.value);$('#reloadSavedCase').onclick=()=>refreshReviewerCase(activeCase);wireScoreControls(c);$('#saveBtn').onclick=saveReviewerScore;updateMetrics(c);
 }
 function scorePanel(c,reviewerName,saved){
   const filled=Object.values(draft.scores).filter(v=>v!==''&&Number.isFinite(Number(v))).length;

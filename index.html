@@ -38,6 +38,10 @@
     </nav>
     <main><div id="notice" class="notice">正在載入資料…</div><div id="app"></div></main>
   </div>
-  <script type="module" src="app-v5.js?v=36"></script>
+  <script type="module">
+    const version = new URLSearchParams(location.search).get('v');
+    const script = version === '34' ? './app-v34.js' : version === '35' ? './app-v35.js' : './app-v5.js';
+    await import(`${script}?revision=20261117-1`);
+  </script>
 </body>
 </html>

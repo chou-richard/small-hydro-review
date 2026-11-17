@@ -1,6 +1,6 @@
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/13.2.0/firebase-app.js';
 import {getAuth,signInAnonymously,setPersistence,inMemoryPersistence} from 'https://www.gstatic.com/firebasejs/13.2.0/firebase-auth.js';
-import {getDatabase,ref,get,set,update} from 'https://www.gstatic.com/firebasejs/13.2.0/firebase-database.js';
+import {getDatabase,ref,get,set,update,runTransaction} from 'https://www.gstatic.com/firebasejs/13.2.0/firebase-database.js';
 import {firebaseConfig} from './firebase-config.js';
 import qrcode from './qrcode-generator.mjs';
 
@@ -10,13 +10,14 @@ const params=new URLSearchParams(location.search),fragment=new URLSearchParams(l
 const ADMIN=fragment.get('admin')||params.get('admin')||'',TOKEN=fragment.get('token')||params.get('token')||'';
 const ACCESS_HASH='e4ffbb56f9fe9c50f61447d9582fdfe6be8727a51adabcad7d7d5da49d49a978';
 const ACCESS_VERSION='2026-11-10-v1';
-const APP_VERSION='35';
+const APP_VERSION='36';
 const CATS=['citizen','environment','composite'];
 const CAT_NAMES={citizen:'公民參與',environment:'友善環境',composite:'複合利用'};
 const CAT_COLORS={citizen:'#173f78',environment:'#007d7d',composite:'#1f5da8'};
 const BAND_DETAILS=['人、事、時、地、物等要素具 3 項以上。','人、事、時、地、物等要素具 1–2 項。','僅列目標，沒有具體作法。','僅有構想，未承諾辦理。','計畫書未提及。'];
 
 let db,auth,user,config={},adminConfig={},cases={},reviewer={},submissions={},draft={},activeCase='';
+let modifiedComments=new Set();
 let adminData={reviewers:{},assessments:{},exclusions:{}},adminTab='setup',adminReviewer='',adminCase='';
 
 async function passwordHash(value){
@@ -76,7 +77,7 @@ async function refreshReviewerCase(caseId){
 }
 function renderReviewer(){
   const c=cases[activeCase];if(!c)return showError('目前沒有啟用中的案件');
-  draft=structuredClone(submissions[activeCase]||{scores:{},comments:{}});draft.scores||={};draft.comments||={};
+  draft=structuredClone(submissions[activeCase]||{scores:{},comments:{}});draft.scores||={};draft.comments||={};modifiedComments.clear();
   const saved=submissions[activeCase],savedState=saved?.updatedAt?'已載入前次儲存資料：'+new Date(saved.updatedAt).toLocaleString():'本案尚無已儲存的評分紀錄';
   $('#app').innerHTML=`<section class="section-title"><h2>委員評分</h2><p class="lede">每個子項輸入 0–100 分，也可用「快速選級距」帶入該級距最高分。</p></section><div class="score-head no-print"><label>審查委員<input value="${esc(reviewer.name)}" disabled></label><label>審查案件<select id="caseSel">${activeCases().map(([id,x])=>`<option value="${id}" ${id===activeCase?'selected':''}>${esc(x.no)}｜${esc(x.organization)}｜${esc(x.name)}</option>`).join('')}</select></label></div><div class="toolbar no-print" style="margin:0 0 12px;align-items:center"><span id="reviewerLoadState" class="muted">${esc(savedState)}</span><button type="button" class="btn secondary" id="reloadSavedCase">重新載入已儲存資料</button></div>${scorePanel(c,reviewer.name,saved)}`;
   $('#caseSel').onchange=e=>refreshReviewerCase(e.target.value);$('#reloadSavedCase').onclick=()=>refreshReviewerCase(activeCase);wireScoreControls(c);$('#saveBtn').onclick=saveReviewerScore;updateMetrics(c);
@@ -92,7 +93,7 @@ function renderCategory(c,cat){
 function wireScoreControls(c){
   document.querySelectorAll('[data-score]').forEach(el=>el.oninput=e=>{draft.scores[e.target.dataset.score]=e.target.value;e.target.closest('.criterion')?.classList.remove('score-error');e.target.removeAttribute('aria-invalid');updateMetrics(c)});
   document.querySelectorAll('[data-pick]').forEach(el=>el.onchange=e=>{if(e.target.value!==''){const id=e.target.dataset.pick;draft.scores[id]=Number(e.target.value);const input=document.querySelector(`[data-score="${id}"]`);if(input){input.value=e.target.value;input.closest('.criterion')?.classList.remove('score-error');input.removeAttribute('aria-invalid')}updateMetrics(c)}});
-  document.querySelectorAll('[data-comment]').forEach(el=>el.oninput=e=>draft.comments[e.target.dataset.comment]=e.target.value);
+  document.querySelectorAll('[data-comment]').forEach(el=>el.oninput=e=>{const id=e.target.dataset.comment;draft.comments[id]=e.target.value;modifiedComments.add(id)});
 }
 function commentControlMarkup(id,name){const saved=ADMIN?adminData.assessments[adminReviewer]?.[adminCase]:submissions[activeCase],savedAt=saved?.commentUpdatedAt?.[id],cleared=!String(saved?.comments?.[id]??'').trim();return `<div class="comment-save-row no-print"><span class="muted small-text" data-single-comment-status="${id}">${savedAt?(cleared?'已清空並儲存：':'已儲存：')+new Date(savedAt).toLocaleString():'尚未單獨儲存'}</span><button type="button" class="btn secondary" data-save-single-comment="${id}" onclick="window.saveSingleComment(event,'${id}')">儲存${esc(name)}</button></div>`}
 function validateAllScores(){const invalid=[...document.querySelectorAll('[data-score]')].filter(input=>{const raw=input.value.trim(),value=Number(raw),bad=raw===''||!Number.isFinite(value)||value<0||value>100;input.closest('.criterion')?.classList.toggle('score-error',bad);if(bad)input.setAttribute('aria-invalid','true');else input.removeAttribute('aria-invalid');return bad});if(!invalid.length)return true;const missing=invalid.filter(x=>x.value.trim()==='').length,outOfRange=invalid.length-missing,parts=[];if(missing)parts.push(`尚有 ${missing} 題未評分`);if(outOfRange)parts.push(`${outOfRange} 題分數須介於 0–100`);const status=$('#status');status.textContent=parts.join('，')+'；請完成後再儲存。';status.className='validation-error';invalid[0].closest('.criterion')?.scrollIntoView({behavior:'smooth',block:'center'});invalid[0].focus({preventScroll:true});return false}
@@ -103,9 +104,25 @@ function updateMetrics(c){
   const done=$('#completionState'),filled=Object.values(r.counts).reduce((a,b)=>a+b,0);if(done){done.className=r.complete?'completion ok':'completion incomplete';done.textContent=r.complete?'已完成 15 項評分，可儲存本案':'已填 '+filled+' / 15 項；可先單獨儲存書面意見，15 題全部完成後才能儲存評分'}
 }
 function assessmentPayload(c){const r=calculate(c),scores=Object.fromEntries(config.criteria.map(i=>[i.itemId,draft.scores[i.itemId]??''])),comments=Object.fromEntries([...CATS,'overall'].map(id=>[id,draft.comments[id]??''])),saved=ADMIN?adminData.assessments[adminReviewer]?.[adminCase]:submissions[activeCase];return {scores,comments,total:r.total,totals:r.totals,complete:r.complete,updatedAt:new Date().toISOString(),...(saved?.commentUpdatedAt?{commentUpdatedAt:saved.commentUpdatedAt}:{}),...(saved?.commentsUpdatedAt?{commentsUpdatedAt:saved.commentsUpdatedAt}:{})}}
+function mergeAssessmentScores(previous,submitted,commentChanges,now){
+  const saved=previous||{},comments=Object.fromEntries([...CATS,'overall'].map(id=>[id,Object.hasOwn(commentChanges,id)?commentChanges[id]:(saved.comments?.[id]??'')]));
+  const commentUpdatedAt={...(saved.commentUpdatedAt||{})};
+  for(const id of Object.keys(commentChanges))commentUpdatedAt[id]=now;
+  return {scores:submitted.scores,comments,total:submitted.total,totals:submitted.totals,complete:submitted.complete,updatedAt:now,
+    ...(Object.keys(commentUpdatedAt).length?{commentUpdatedAt}:{}),
+    ...(Object.keys(commentChanges).length?{commentsUpdatedAt:now}:saved.commentsUpdatedAt?{commentsUpdatedAt:saved.commentsUpdatedAt}:{})};
+}
+async function persistScores(token,caseId,submitted,commentChanges){
+  const now=new Date().toISOString(),target=ref(db,`assessments/${token}/${caseId}`);
+  const result=await runTransaction(target,current=>mergeAssessmentScores(current,submitted,commentChanges,now),{applyLocally:false});
+  if(!result.committed)throw new Error('雲端未確認儲存，請重新嘗試');
+  const saved=result.snapshot.val();
+  if(!saved?.complete||config.criteria.some(item=>String(saved.scores?.[item.itemId])!==String(submitted.scores[item.itemId])))throw new Error('雲端評分驗證未通過，請重新載入');
+  return saved;
+}
 async function saveReviewerComments(event){event?.preventDefault();event?.stopPropagation();const btn=$('#saveCommentsBtn'),scoreBtn=$('#saveBtn');if(!btn||btn.dataset.saving==='1')return;btn.dataset.saving='1';const originalLabel=btn.textContent,saved=structuredClone(submissions[activeCase]||{}),status=$('#status');status.className='muted';status.textContent='已接收到儲存指令，正在檢查書面意見…';document.querySelectorAll('[data-comment]').forEach(el=>draft.comments[el.dataset.comment]=el.value);const scores=Object.fromEntries(config.criteria.map(i=>[i.itemId,saved.scores?.[i.itemId]??''])),comments=Object.fromEntries([...CATS,'overall'].map(id=>[id,draft.comments[id]??'']));if(!Object.values(comments).some(value=>String(value).trim())){const message='請至少填寫一欄書面意見後再儲存。';status.className='validation-error';status.textContent=message;alert(message);delete btn.dataset.saving;return}const now=new Date().toISOString(),data={scores,comments,total:Number(saved.total)||0,totals:saved.totals||{citizen:0,environment:0,composite:0},complete:saved.complete===true,updatedAt:now,commentsUpdatedAt:now};btn.disabled=true;scoreBtn.disabled=true;btn.textContent='書面意見儲存中…';status.textContent='正在儲存書面意見…';try{await set(ref(db,`assessments/${TOKEN}/${activeCase}`),data);submissions[activeCase]=structuredClone(data);btn.textContent='書面意見已儲存 ✓';status.className='completion ok';status.textContent='書面意見已儲存；未完成的評分不會一併送出';alert('書面意見已成功儲存。')}catch(e){const message='書面意見儲存失敗：'+e.message;status.className='validation-error';status.textContent=message;alert(message)}finally{btn.disabled=false;scoreBtn.disabled=false;delete btn.dataset.saving;if(btn.textContent!=='書面意見已儲存 ✓')btn.textContent=originalLabel}}
 async function saveSingleComment(event,id){event?.preventDefault();event?.stopPropagation();const btn=document.querySelector(`[data-save-single-comment="${id}"]`),field=document.querySelector(`[data-comment="${id}"]`),fieldStatus=document.querySelector(`[data-single-comment-status="${id}"]`),globalStatus=$('#status'),scoreBtn=$('#saveBtn');if(!btn||!field||btn.dataset.saving==='1')return;const name=id==='overall'?'綜合意見':(CAT_NAMES[id]||'書面意見'),value=field.value;if(!value.trim()){const message=`請先填寫${name}內容。`;fieldStatus.textContent=message;fieldStatus.className='validation-error small-text';alert(message);field.focus();return}btn.dataset.saving='1';btn.disabled=true;scoreBtn.disabled=true;btn.textContent='儲存中…';fieldStatus.className='muted small-text';fieldStatus.textContent='正在儲存…';globalStatus.className='muted';globalStatus.textContent=`正在儲存${name}…`;const saved=structuredClone(submissions[activeCase]||{}),scores=Object.fromEntries(config.criteria.map(item=>[item.itemId,saved.scores?.[item.itemId]??''])),comments=Object.fromEntries([...CATS,'overall'].map(commentId=>[commentId,saved.comments?.[commentId]??''])),now=new Date().toISOString(),commentUpdatedAt={...(saved.commentUpdatedAt||{}),[id]:now};comments[id]=value;const data={scores,comments,total:Number(saved.total)||0,totals:saved.totals||{citizen:0,environment:0,composite:0},complete:saved.complete===true,updatedAt:now,commentsUpdatedAt:now,commentUpdatedAt};try{await set(ref(db,`assessments/${TOKEN}/${activeCase}`),data);submissions[activeCase]=structuredClone(data);draft.comments[id]=value;btn.textContent='已完成儲存 ✓';fieldStatus.className='completion ok small-text';fieldStatus.textContent='已儲存：'+new Date(now).toLocaleString();globalStatus.className='completion ok';globalStatus.textContent=`${name}已完成儲存`;alert(`${name}已完成儲存。`)}catch(e){const message=`${name}儲存失敗：${e.message}`;btn.textContent=`儲存${name}`;fieldStatus.className='validation-error small-text';fieldStatus.textContent=message;globalStatus.className='validation-error';globalStatus.textContent=message;alert(message)}finally{btn.disabled=false;scoreBtn.disabled=false;delete btn.dataset.saving}}
-async function saveReviewerScore(){if(!validateAllScores())return;const btn=$('#saveBtn'),data=assessmentPayload(cases[activeCase]);btn.disabled=true;$('#status').className='muted';$('#status').textContent='儲存中…';try{await set(ref(db,`assessments/${TOKEN}/${activeCase}`),data);submissions[activeCase]=structuredClone(data);$('#status').textContent='已完成 15 項並儲存，總分 '+data.total.toFixed(2)}catch(e){$('#status').textContent='儲存失敗：'+e.message}finally{btn.disabled=false}}
+async function saveReviewerScore(){if(!validateAllScores())return;const btn=$('#saveBtn'),data=assessmentPayload(cases[activeCase]),caseId=activeCase,changes=Object.fromEntries([...modifiedComments].map(id=>[id,draft.comments[id]??'']));btn.disabled=true;$('#status').className='muted';$('#status').textContent='儲存中…';try{await setSession({reviewerToken:TOKEN});const saved=await persistScores(TOKEN,caseId,data,changes);submissions[caseId]=structuredClone(saved);for(const [id,value] of Object.entries(changes))if(draft.comments[id]===value)modifiedComments.delete(id);$('#status').className='completion ok';$('#status').textContent='已完成 15 項並儲存，總分 '+Number(saved.total).toFixed(2);const state=$('#reviewerLoadState');if(state)state.textContent='已儲存至雲端：'+new Date(saved.updatedAt).toLocaleString()}catch(e){$('#status').className='validation-error';$('#status').textContent='儲存失敗：'+e.message}finally{btn.disabled=false}}
 
 async function loadAdmin(){
   await setSession({adminToken:ADMIN});const [rs,as,xs,acs]=await Promise.all([get(ref(db,'reviewers')),get(ref(db,'assessments')),get(ref(db,'exclusions')),get(ref(db,'adminConfig'))]);
@@ -138,9 +155,9 @@ function renderQrCodes(){
   document.querySelectorAll('[data-download-qr]').forEach(btn=>btn.onclick=()=>{const box=btn.closest('.qr-cell').querySelector('[data-qr-url]'),a=document.createElement('a');a.href=box.dataset.qrImage;a.download=safeName(box.dataset.qrName)+'_專屬填報_QR.gif';document.body.appendChild(a);a.click();a.remove()});
 }
 
-function adminScoringMarkup(){if(!adminReviewer||!adminCase)return `<div class="notice error">請先建立並啟用委員與案件。</div>`;const c=cases[adminCase],r=adminData.reviewers[adminReviewer],saved=adminData.assessments[adminReviewer]?.[adminCase];draft=structuredClone(saved||{scores:{},comments:{}});draft.scores||={};draft.comments||={};return `<div class="section-title"><h2>委員評分</h2><p class="lede">管理員可選擇委員與案件代為填報，儲存後與該委員專屬網址同步。</p></div><div class="score-head"><label>審查委員<select id="adminReviewerSel">${activeReviewers().map(([id,x])=>`<option value="${id}" ${id===adminReviewer?'selected':''}>${esc(x.name)}</option>`).join('')}</select></label><label>審查案件<select id="adminCaseSel">${activeCases().map(([id,x])=>`<option value="${id}" ${id===adminCase?'selected':''}>${esc(x.no)}｜${esc(x.name)}</option>`).join('')}</select></label></div>${scorePanel(c,r.name,saved)}`}
+function adminScoringMarkup(){if(!adminReviewer||!adminCase)return `<div class="notice error">請先建立並啟用委員與案件。</div>`;const c=cases[adminCase],r=adminData.reviewers[adminReviewer],saved=adminData.assessments[adminReviewer]?.[adminCase];draft=structuredClone(saved||{scores:{},comments:{}});draft.scores||={};draft.comments||={};modifiedComments.clear();return `<div class="section-title"><h2>委員評分</h2><p class="lede">管理員可選擇委員與案件代為填報，儲存後與該委員專屬網址同步。</p></div><div class="score-head"><label>審查委員<select id="adminReviewerSel">${activeReviewers().map(([id,x])=>`<option value="${id}" ${id===adminReviewer?'selected':''}>${esc(x.name)}</option>`).join('')}</select></label><label>審查案件<select id="adminCaseSel">${activeCases().map(([id,x])=>`<option value="${id}" ${id===adminCase?'selected':''}>${esc(x.no)}｜${esc(x.name)}</option>`).join('')}</select></label></div>${scorePanel(c,r.name,saved)}`}
 function bindAdminScoring(){if(!adminReviewer||!adminCase)return;$('#adminReviewerSel').onchange=e=>{adminReviewer=e.target.value;renderAdmin()};$('#adminCaseSel').onchange=e=>{adminCase=e.target.value;renderAdmin()};const c=cases[adminCase];wireScoreControls(c);$('#saveBtn').onclick=saveAdminScore;updateMetrics(c)}
-async function saveAdminScore(){if(!validateAllScores())return;const btn=$('#saveBtn'),data=assessmentPayload(cases[adminCase]);btn.disabled=true;$('#status').className='muted';$('#status').textContent='儲存中…';try{await setSession({adminToken:ADMIN,reviewerToken:adminReviewer});await set(ref(db,`assessments/${adminReviewer}/${adminCase}`),data);adminData.assessments[adminReviewer]||={};adminData.assessments[adminReviewer][adminCase]=structuredClone(data);$('#status').textContent='已完成 15 項並儲存，總分 '+data.total.toFixed(2)}catch(e){$('#status').textContent='儲存失敗：'+e.message}finally{await setSession({adminToken:ADMIN});btn.disabled=false}}
+async function saveAdminScore(){if(!validateAllScores())return;const btn=$('#saveBtn'),data=assessmentPayload(cases[adminCase]),token=adminReviewer,caseId=adminCase,changes=Object.fromEntries([...modifiedComments].map(id=>[id,draft.comments[id]??'']));btn.disabled=true;$('#status').className='muted';$('#status').textContent='儲存中…';try{const saved=await withReviewerAccess(token,adminData.reviewers[token],()=>persistScores(token,caseId,data,changes));adminData.assessments[token]||={};adminData.assessments[token][caseId]=structuredClone(saved);for(const [id,value] of Object.entries(changes))if(draft.comments[id]===value)modifiedComments.delete(id);$('#status').className='completion ok';$('#status').textContent='已完成 15 項並儲存，總分 '+Number(saved.total).toFixed(2)}catch(e){$('#status').className='validation-error';$('#status').textContent='儲存失敗：'+e.message}finally{btn.disabled=false}}
 
 function resultRows(){return activeCases().map(([caseId,c])=>{const detail=activeReviewers().map(([token,r])=>{const s=adminData.assessments[token]?.[caseId],include=adminData.exclusions[caseId]?.[token]!==false;return {token,name:r.name,complete:!!s?.complete,score:s?Number(s.total):null,include}}),used=detail.filter(x=>x.include&&x.complete&&Number.isFinite(x.score)),avg=used.length?used.reduce((a,b)=>a+b.score,0)/used.length:null;return {caseId,...c,detail,average:avg,includedCount:used.length,passed:avg===null?null:avg>=config.passScore}}).sort((a,b)=>(b.average??-1)-(a.average??-1)).map((r,i,a)=>({...r,rank:r.average===null?null:(i&&a[i-1].average===r.average?a[i-1].rank:i+1)}))}
 function summaryMarkup(){const results=resultRows();return `<div class="section-title"><h2>彙總與排名</h2><p class="lede">可隨時預先設定各委員是否納入本案平均；只有 15 個子項均已評分的委員才會實際納入計算。</p></div><div class="card"><div class="card-title"><h3>案件排名</h3><button class="btn secondary small" id="reload">重新計算</button></div><div class="table-wrap"><table><thead><tr><th>名次</th><th>案件</th><th>申請單位</th><th>納入委員數</th><th>平均總得分</th><th>結果</th></tr></thead><tbody>${results.map(r=>`<tr><td>${r.rank?`<span class="rank-number">${r.rank}</span>`:'—'}</td><td><strong>${esc(r.no)} ${esc(r.name)}</strong></td><td>${esc(r.organization||'')}</td><td>${r.includedCount}</td><td><strong>${r.average===null?'—':r.average.toFixed(2)}</strong></td><td class="${r.passed===true?'pass':r.passed===false?'fail':''}">${r.passed===null?'無完整且納入的評分':r.passed?'及格':'未達 '+config.passScore+' 分'}</td></tr>`).join('')}</tbody></table></div></div>${results.map(r=>`<div class="card"><div class="card-title"><div><h3>${esc(r.no)} ${esc(r.name)}</h3><div class="case-meta">本案件配分：${CATS.map(k=>CAT_NAMES[k]+' '+r[k]).join('、')}</div></div></div><div class="table-wrap"><table><thead><tr><th>委員</th><th>評分狀態</th><th>總分</th><th>納入本案平均</th><th>說明</th></tr></thead><tbody>${r.detail.map(x=>`<tr><td>${esc(x.name)}</td><td class="${x.complete?'completion ok':'completion incomplete'}">${x.complete?'已完成':'未完成'}</td><td>${x.score===null?'—':x.score.toFixed(2)}</td><td><label><input style="width:auto;margin-right:6px" type="checkbox" data-inc="${r.caseId}::${x.token}" ${x.include?'checked':''}>納入</label></td><td class="muted small-text">${x.complete?(x.include?'已納入平均':'人工排除，不列入平均'):(x.include?'已預設納入；完成 15 項評分後自動計算':'已預設排除；完成後仍不列入平均')}</td></tr>`).join('')}</tbody></table></div></div>`).join('')}`}
@@ -218,7 +235,7 @@ async function openCloudProject(){
   }finally{if(document.body.contains(btn))btn.disabled=false}
 }
 async function newCloudProject(){if(!confirm('建立新線上專案會清空目前案件評分與排除設定，但保留委員及專屬網址。是否繼續？'))return;const entered=prompt('請輸入新線上專案名稱：','小水力審查專案');if(entered===null)return;const name=entered.trim()||'小水力審查專案';await clearAssessments(adminData.assessments);await set(ref(db,'exclusions'),null);await set(ref(db,'cases'),{case1:{no:'案1',organization:'',name:'',citizen:50,environment:30,composite:20,active:true}});await update(ref(db,'config'),{title:name,passScore:70});config=(await get(ref(db,'config'))).val()||{};normalizeConfig();cases=(await get(ref(db,'cases'))).val()||{};adminData.assessments={};adminData.exclusions={};adminTab='setup';await saveCloudProject(true,name)}
-async function withReviewerAccess(token,record,task){const wasInactive=record?.active===false;if(wasInactive)await update(ref(db,'reviewers/'+token),{active:true});await setSession({adminToken:ADMIN,reviewerToken:token});try{await task()}finally{await setSession({adminToken:ADMIN});if(wasInactive)await update(ref(db,'reviewers/'+token),{active:false})}}
+async function withReviewerAccess(token,record,task){const wasInactive=record?.active===false;if(wasInactive)await update(ref(db,'reviewers/'+token),{active:true});await setSession({adminToken:ADMIN,reviewerToken:token});try{return await task()}finally{await setSession({adminToken:ADMIN});if(wasInactive)await update(ref(db,'reviewers/'+token),{active:false})}}
 async function clearAssessments(source){for(const [token,byCase] of Object.entries(source||{}))await withReviewerAccess(token,adminData.reviewers[token],async()=>{for(const caseId of Object.keys(byCase||{}))await set(ref(db,`assessments/${token}/${caseId}`),null)})}
 async function syncReviewers(next){const all=new Set([...Object.keys(adminData.reviewers),...Object.keys(next||{})]);for(const token of all)await set(ref(db,'reviewers/'+token),next?.[token]||null)}
 async function restoreProjectData(d){
@@ -243,23 +260,29 @@ async function persistCommentFields(ids){
   const {token,caseId}=currentCommentTarget();
   if(!token||!caseId)throw new Error('請先選擇委員與案件');
   const path=`assessments/${token}/${caseId}`;
+  const values=Object.fromEntries(ids.map(id=>[id,document.querySelector(`[data-comment="${id}"]`)?.value??'']));
+  const now=new Date().toISOString();
   let phase='取得委員寫入授權';
   const write=async()=>{
-    phase='讀取既有評分';
-    const saved=(await get(ref(db,path))).val()||{};
-    const scores=Object.fromEntries(config.criteria.map(item=>[item.itemId,saved.scores?.[item.itemId]??'']));
-    const comments=Object.fromEntries([...CATS,'overall'].map(id=>[id,saved.comments?.[id]??'']));
-    const now=new Date().toISOString(),commentUpdatedAt={...(saved.commentUpdatedAt||{})};
-    for(const id of ids){comments[id]=document.querySelector(`[data-comment="${id}"]`)?.value??'';commentUpdatedAt[id]=now}
-    const data={scores,comments,total:Number(saved.total)||0,totals:saved.totals||{citizen:0,environment:0,composite:0},complete:saved.complete===true,updatedAt:now,commentsUpdatedAt:now,commentUpdatedAt};
     phase='寫入書面意見';
-    await set(ref(db,path),data);
+    const result=await runTransaction(ref(db,path),previous=>{
+      const saved=previous||{};
+      const scores=Object.fromEntries(config.criteria.map(item=>[item.itemId,saved.scores?.[item.itemId]??'']));
+      const comments=Object.fromEntries([...CATS,'overall'].map(id=>[id,Object.hasOwn(values,id)?values[id]:(saved.comments?.[id]??'')]));
+      const commentUpdatedAt={...(saved.commentUpdatedAt||{})};
+      for(const id of ids)commentUpdatedAt[id]=now;
+      return {scores,comments,total:Number(saved.total)||0,totals:saved.totals||{citizen:0,environment:0,composite:0},complete:saved.complete===true,updatedAt:now,commentsUpdatedAt:now,commentUpdatedAt};
+    },{applyLocally:false});
+    if(!result.committed)throw new Error('雲端未確認儲存，請重新嘗試');
+    const data=result.snapshot.val();
+    if(ids.some(id=>data?.comments?.[id]!==values[id]))throw new Error('雲端書面意見驗證未通過，請重新載入');
     if(ADMIN){adminData.assessments[token]||={};adminData.assessments[token][caseId]=structuredClone(data)}else submissions[caseId]=structuredClone(data);
-    ids.forEach(id=>draft.comments[id]=comments[id]);
+    ids.forEach(id=>{const current=document.querySelector(`[data-comment="${id}"]`)?.value??'';if(current===values[id]){draft.comments[id]=values[id];modifiedComments.delete(id)}});
     return data;
   };
   try{
     if(ADMIN){let result;await withReviewerAccess(token,adminData.reviewers[token],async()=>{result=await write()});return result}
+    await setSession({reviewerToken:TOKEN});
     return await write();
   }catch(error){throw new Error(`${phase}階段：${error.message}`)}
 }
